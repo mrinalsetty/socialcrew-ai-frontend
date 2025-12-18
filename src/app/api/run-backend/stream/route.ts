@@ -17,17 +17,35 @@ export async function GET(req: Request) {
     const inUrl = new URL(req.url);
     const topic = (inUrl.searchParams.get("topic") || "").trim();
     const base = backendHttp;
-    const target = `${base}/run${
-      topic ? `?topic=${encodeURIComponent(topic)}` : ""
-    }`;
-    const res = await fetch(target, {
-      headers: { accept: "text/event-stream" },
+    // POST to backend /run endpoint
+    const res = await fetch(`${base}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic }),
+    });
+    // Stream the JSON response as SSE for frontend compatibility
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          const payload = await res.json();
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`)
+          );
+          controller.close();
+        } catch (err) {
+          controller.enqueue(
+            encoder.encode(`event: error\ndata: ${String(err)}\n\n`)
+          );
+          controller.close();
+        }
+      },
     });
     const headers = new Headers();
     headers.set("Content-Type", "text/event-stream; charset=utf-8");
     headers.set("Cache-Control", "no-cache, no-transform");
     headers.set("Connection", "keep-alive");
-    return new Response(res.body, { status: res.status, headers });
+    return new Response(stream, { status: res.status, headers });
   }
 
   const encoder = new TextEncoder();
