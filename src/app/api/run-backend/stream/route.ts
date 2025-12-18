@@ -94,22 +94,7 @@ export async function GET(req: Request) {
       let child: ChildProcess | null = null;
 
       function spawnCliOrPython() {
-        // 1) Prefer venv CrewAI CLI if available
-        if (fs.existsSync(venvCrewai)) {
-          writeSse(`Using CLI: ${venvCrewai} run`);
-          try {
-            child = spawn(venvCrewai, ["run"], {
-              cwd: backendDir,
-              env,
-              shell: false,
-            });
-            return;
-          } catch {
-            child = null;
-          }
-        }
-
-        // 2) Fall back to Python module
+        // 1) Prefer running our Python module so TOPIC/env is honored consistently
         const candidates = [preferred || "", "python3", "python"].filter(
           Boolean
         ) as string[];
@@ -121,6 +106,21 @@ export async function GET(req: Request) {
               shell: false,
             });
             writeSse(`Using interpreter: ${bin}`);
+            return;
+          } catch {
+            child = null;
+          }
+        }
+
+        // 2) Fallback to CrewAI CLI if present
+        if (fs.existsSync(venvCrewai)) {
+          writeSse(`Using CLI fallback: ${venvCrewai} run`);
+          try {
+            child = spawn(venvCrewai, ["run"], {
+              cwd: backendDir,
+              env,
+              shell: false,
+            });
             return;
           } catch {
             child = null;
