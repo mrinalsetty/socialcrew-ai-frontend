@@ -35,39 +35,47 @@ export default function Home() {
       const qp = topic ? `?topic=${encodeURIComponent(topic)}` : "";
       const es = new EventSource(`/api/run-backend/stream${qp}`);
       esRef.current = es;
-      es.onmessage = (evt) => appendLog(evt.data);
-      es.addEventListener("done", async () => {
-        es.close();
-        esRef.current = null;
-
-        const [contentJsonResp, analyticsMdResp] = await Promise.all([
-          fetch("/api/file/social_posts.json"),
-          fetch("/api/file/analytics_summary.md"),
-        ]);
-
-        if (contentJsonResp.ok) {
-          const raw = await contentJsonResp.text();
-          let pretty = raw;
-          try {
-            const parsed = JSON.parse(raw);
-            pretty = JSON.stringify(parsed, null, 2);
-          } catch {}
-          setMessages((prev) => [
-            ...prev,
-            { role: "agent", agent: "Content Creator", content: pretty },
-          ]);
-        }
-
-        if (analyticsMdResp.ok) {
-          const md = await analyticsMdResp.text();
-          setMessages((prev) => [
-            ...prev,
-            { role: "agent", agent: "Social Analyst", content: md },
-          ]);
-        }
-
-        setRunning(false);
-      });
+      es.onmessage = async (evt) => {
+        appendLog(evt.data);
+        // Try to parse backend JSON response and update UI on success
+        try {
+          const data = JSON.parse(evt.data);
+          if (data.status === "completed") {
+            // Fetch outputs and update UI
+            const [contentJsonResp, analyticsMdResp] = await Promise.all([
+              fetch("/api/file/social_posts.json"),
+              fetch("/api/file/analytics_summary.md"),
+            ]);
+            if (contentJsonResp.ok) {
+              const raw = await contentJsonResp.text();
+              let pretty = raw;
+              try {
+                const parsed = JSON.parse(raw);
+                pretty = JSON.stringify(parsed, null, 2);
+              } catch {}
+              setMessages((prev) => [
+                ...prev,
+                { role: "agent", agent: "Content Creator", content: pretty },
+              ]);
+            }
+            if (analyticsMdResp.ok) {
+              const md = await analyticsMdResp.text();
+              setMessages((prev) => [
+                ...prev,
+                { role: "agent", agent: "Social Analyst", content: md },
+              ]);
+            }
+            setRunning(false);
+            es.close();
+            esRef.current = null;
+          } else if (data.status === "failed") {
+            setError(data.message || "Backend error");
+            setRunning(false);
+            es.close();
+            esRef.current = null;
+          }
+        } catch {}
+      };
       es.onerror = () => {
         setError("Stream error. Check backend and .env.");
         es.close();
