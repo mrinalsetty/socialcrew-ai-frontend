@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 type Post = {
   hook?: string;
   body?: string;
   cta?: string;
-  hashtags?: string[];
+  hashtags?: string[] | string;
 };
 
 type PostsData = {
   x?: Post[];
+  instagram?: Post[];
   linkedin?: Post[];
+  youtube?: Post[];
   [key: string]: Post[] | undefined;
 };
 
@@ -22,6 +24,15 @@ type ChatMessage = {
   parsedPosts?: PostsData;
 };
 
+const BACKEND_URL = "https://socialcrew-ai.onrender.com";
+
+const PLATFORM_CONFIG: Record<string, { label: string; icon: string }> = {
+  x: { label: "𝕏 Twitter", icon: "𝕏" },
+  instagram: { label: "Instagram", icon: "📸" },
+  linkedin: { label: "LinkedIn", icon: "💼" },
+  youtube: { label: "YouTube", icon: "▶️" },
+};
+
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<string>("");
@@ -30,8 +41,38 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [topic, setTopic] = useState<string>("");
   const [activePlatform, setActivePlatform] = useState<string>("x");
+  const [serverStatus, setServerStatus] = useState<
+    "checking" | "online" | "offline"
+  >("checking");
   const esRef = useRef<EventSource | null>(null);
   const completedRef = useRef(false);
+
+  // Check server status
+  const checkServerStatus = useCallback(async () => {
+    setServerStatus("checking");
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(`${BACKEND_URL}/health`, {
+        signal: controller.signal,
+        mode: "cors",
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        setServerStatus("online");
+      } else {
+        setServerStatus("offline");
+      }
+    } catch {
+      setServerStatus("offline");
+    }
+  }, []);
+
+  useEffect(() => {
+    checkServerStatus();
+    const interval = setInterval(checkServerStatus, 30000);
+    return () => clearInterval(interval);
+  }, [checkServerStatus]);
 
   function appendLog(line: string) {
     setLogs((prev) => (prev ? prev + "\n" + line : line));
@@ -41,6 +82,16 @@ export default function Home() {
     try {
       const parsed = JSON.parse(raw);
       if (parsed.raw && parsed.error) return null;
+
+      const normalizeKeys = (obj: Record<string, Post[]>): PostsData => {
+        const result: PostsData = {};
+        Object.keys(obj).forEach((k) => {
+          if (Array.isArray(obj[k])) {
+            result[k.toLowerCase()] = obj[k];
+          }
+        });
+        return result;
+      };
 
       // Structure 1: { platforms: [{ name: "X", posts: [...] }, ...] }
       if (parsed.platforms && Array.isArray(parsed.platforms)) {
@@ -54,33 +105,35 @@ export default function Home() {
         return result;
       }
 
-      // Structure 2: { "X": [...], "LinkedIn": [...] } - direct platform keys
+      // Structure 2: { Platforms: { X: [...], LinkedIn: [...] } }
+      const platformsKey = Object.keys(parsed).find(
+        (k) => k.toLowerCase() === "platforms"
+      );
+      if (
+        platformsKey &&
+        typeof parsed[platformsKey] === "object" &&
+        !Array.isArray(parsed[platformsKey])
+      ) {
+        return normalizeKeys(parsed[platformsKey]);
+      }
+
+      // Structure 3: { "x": [...], "linkedin": [...] } - direct platform keys
       const keys = Object.keys(parsed);
       const hasPlatformArrays = keys.some((k) => Array.isArray(parsed[k]));
       if (hasPlatformArrays) {
-        const result: PostsData = {};
-        keys.forEach((k) => {
-          if (Array.isArray(parsed[k])) {
-            result[k.toLowerCase()] = parsed[k];
-          }
-        });
-        return result;
+        return normalizeKeys(parsed);
       }
 
-      // Structure 3: { posts: { x: [...], linkedin: [...] } }
+      // Structure 4: { posts: { x: [...], linkedin: [...] } }
       if (
         parsed.posts &&
         typeof parsed.posts === "object" &&
         !Array.isArray(parsed.posts)
       ) {
-        const result: PostsData = {};
-        Object.keys(parsed.posts).forEach((k) => {
-          result[k.toLowerCase()] = parsed.posts[k];
-        });
-        return result;
+        return normalizeKeys(parsed.posts);
       }
 
-      // Structure 4: Array of posts with platform field
+      // Structure 5: Array of posts with platform field
       if (Array.isArray(parsed)) {
         const grouped: PostsData = {};
         parsed.forEach((post: Post & { platform?: string }) => {
@@ -98,18 +151,25 @@ export default function Home() {
   }
 
   async function runFlow() {
+    if (serverStatus === "offline") {
+      setError("Server is offline. Click 'Wake Server' to start it.");
+      return;
+    }
+
+    // Reset state
+    setRunning(true);
+    setError(null);
+    setLogs("");
+    setMessages([]);
+    completedRef.current = false;
+
+    // Close existing EventSource
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
+    }
+
     try {
-      setRunning(true);
-      setError(null);
-      setLogs("");
-      setMessages([]);
-      completedRef.current = false;
-
-      if (esRef.current) {
-        esRef.current.close();
-        esRef.current = null;
-      }
-
       const qp = topic ? `?topic=${encodeURIComponent(topic)}` : "";
       const es = new EventSource(`/api/run-backend/stream${qp}`);
       esRef.current = es;
@@ -141,6 +201,20 @@ export default function Home() {
                   content: raw,
                   parsedPosts: parsedPosts || undefined,
                 });
+                // Set active platform to first available
+                if (parsedPosts) {
+                  const availablePlatforms = Object.keys(parsedPosts).filter(
+                    (k) =>
+                      Array.isArray(parsedPosts[k]) &&
+                      parsedPosts[k]!.length > 0
+                  );
+                  if (
+                    availablePlatforms.length > 0 &&
+                    !availablePlatforms.includes(activePlatform)
+                  ) {
+                    setActivePlatform(availablePlatforms[0]);
+                  }
+                }
               } else {
                 newMessages.push({
                   role: "agent",
@@ -201,7 +275,10 @@ export default function Home() {
 
       es.onerror = () => {
         if (!completedRef.current) {
-          setError("Connection error. Please try again.");
+          setError(
+            "Connection error. The server might be waking up. Please try again."
+          );
+          checkServerStatus();
         }
         es.close();
         esRef.current = null;
@@ -230,8 +307,6 @@ export default function Home() {
         (k) => Array.isArray(posts[k]) && posts[k]!.length > 0
       )
     : [];
-
-  // Set active platform to first available if current is not valid
   const effectivePlatform = platforms.includes(activePlatform)
     ? activePlatform
     : platforms[0] || "x";
@@ -261,9 +336,31 @@ export default function Home() {
               SocialCrew AI
             </h1>
           </div>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Powered by CrewAI
+
+          {/* Server Status */}
+          <div className="flex items-center gap-2">
+            {serverStatus === "checking" ? (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                Checking server...
+              </div>
+            ) : serverStatus === "online" ? (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Powered by CrewAI
+              </div>
+            ) : (
+              <a
+                href={BACKEND_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setTimeout(checkServerStatus, 5000)}
+                className="flex items-center gap-2 text-xs bg-red-500/10 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/20 hover:bg-red-500/20 transition-all"
+              >
+                <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                Wake Server
+              </a>
+            )}
           </div>
         </div>
       </header>
@@ -288,7 +385,7 @@ export default function Home() {
               </div>
               <button
                 onClick={runFlow}
-                disabled={running}
+                disabled={running || serverStatus === "checking"}
                 className="px-8 py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 text-white font-medium hover:from-cyan-500 hover:to-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40"
               >
                 {running ? (
@@ -361,23 +458,20 @@ export default function Home() {
                 ) : posts && platforms.length > 0 ? (
                   <div>
                     {/* Platform Tabs */}
-                    <div className="flex gap-2 mb-4">
+                    <div className="flex flex-wrap gap-2 mb-4">
                       {platforms.map((platform) => (
                         <button
                           key={platform}
                           onClick={() => setActivePlatform(platform)}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                             effectivePlatform === platform
                               ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
                               : "bg-[#2a2a2a]/50 text-gray-400 border border-transparent hover:bg-[#2a2a2a]"
                           }`}
                         >
-                          {platform.toLowerCase() === "x" ||
-                          platform.toLowerCase() === "twitter"
-                            ? "𝕏 Twitter"
-                            : platform.toLowerCase() === "linkedin"
-                            ? "LinkedIn"
-                            : platform.charAt(0).toUpperCase() +
+                          <span>{PLATFORM_CONFIG[platform]?.icon || "📱"}</span>
+                          {PLATFORM_CONFIG[platform]?.label ||
+                            platform.charAt(0).toUpperCase() +
                               platform.slice(1)}
                         </button>
                       ))}
@@ -463,7 +557,7 @@ export default function Home() {
               Clear
             </button>
           </div>
-          <pre className="text-emerald-400/80 whitespace-pre-wrap">
+          <pre className="text-cyan-400/80 whitespace-pre-wrap">
             {logs || "No logs yet..."}
           </pre>
         </div>
@@ -475,11 +569,33 @@ export default function Home() {
 function PostCard({ post, index }: { post: Post; index: number }) {
   const [copied, setCopied] = useState(false);
 
+  const hook =
+    post.hook ||
+    (post as Record<string, unknown>).title ||
+    (post as Record<string, unknown>).headline ||
+    "";
+  const body =
+    post.body ||
+    (post as Record<string, unknown>).content ||
+    (post as Record<string, unknown>).text ||
+    (post as Record<string, unknown>).description ||
+    "";
+  const cta =
+    post.cta || (post as Record<string, unknown>).call_to_action || "";
+
+  let hashtags: string[] = [];
+  const rawTags = post.hashtags || (post as Record<string, unknown>).tags;
+  if (Array.isArray(rawTags)) {
+    hashtags = rawTags;
+  } else if (typeof rawTags === "string") {
+    hashtags = rawTags.split(/\s+/).filter(Boolean);
+  }
+
   const fullText = [
-    post.hook,
-    post.body,
-    post.cta,
-    post.hashtags?.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" "),
+    hook,
+    body,
+    cta,
+    hashtags.map((h: string) => (h.startsWith("#") ? h : `#${h}`)).join(" "),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -489,6 +605,21 @@ function PostCard({ post, index }: { post: Post; index: number }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (!hook && !body && !cta) {
+    return (
+      <div className="bg-[#0f0f0f] rounded-xl p-4 border border-[#2a2a2a]/50">
+        <div className="flex items-start justify-between mb-3">
+          <span className="text-xs text-gray-500 bg-[#2a2a2a] px-2 py-1 rounded-md">
+            Post {index + 1}
+          </span>
+        </div>
+        <pre className="text-sm text-gray-300 whitespace-pre-wrap font-mono">
+          {JSON.stringify(post, null, 2)}
+        </pre>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-[#0f0f0f] rounded-xl p-4 border border-[#2a2a2a]/50 hover:border-[#3a3a3a] transition-all group">
@@ -503,7 +634,7 @@ function PostCard({ post, index }: { post: Post; index: number }) {
         >
           {copied ? (
             <svg
-              className="w-4 h-4 text-emerald-400"
+              className="w-4 h-4 text-cyan-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -533,25 +664,25 @@ function PostCard({ post, index }: { post: Post; index: number }) {
         </button>
       </div>
 
-      {post.hook && (
+      {hook && (
         <p className="text-white font-medium mb-2 leading-relaxed">
-          {post.hook}
+          {String(hook)}
         </p>
       )}
-      {post.body && (
+      {body && (
         <p className="text-gray-300 text-sm mb-3 leading-relaxed">
-          {post.body}
+          {String(body)}
         </p>
       )}
-      {post.cta && <p className="text-cyan-400 text-sm mb-3">{post.cta}</p>}
-      {post.hashtags && post.hashtags.length > 0 && (
+      {cta && <p className="text-cyan-400 text-sm mb-3">{String(cta)}</p>}
+      {hashtags.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {post.hashtags.map((tag, i) => (
+          {hashtags.map((tag: string, i: number) => (
             <span
               key={i}
               className="text-xs text-cyan-400/70 bg-cyan-400/10 px-2 py-1 rounded-md"
             >
-              {tag.startsWith("#") ? tag : `#${tag}`}
+              {String(tag).startsWith("#") ? tag : `#${tag}`}
             </span>
           ))}
         </div>
@@ -561,7 +692,6 @@ function PostCard({ post, index }: { post: Post; index: number }) {
 }
 
 function MarkdownRenderer({ content }: { content: string }) {
-  // Simple markdown rendering
   const lines = content.split("\n");
 
   return (
@@ -570,7 +700,6 @@ function MarkdownRenderer({ content }: { content: string }) {
         const trimmed = line.trim();
         if (!trimmed) return <div key={i} className="h-2" />;
 
-        // Headers
         if (trimmed.startsWith("####")) {
           return (
             <h4 key={i} className="text-sm font-semibold text-gray-300 mt-4">
@@ -600,7 +729,6 @@ function MarkdownRenderer({ content }: { content: string }) {
           );
         }
 
-        // Bold wrapped in **
         if (trimmed.startsWith("**") && trimmed.endsWith("**")) {
           return (
             <p key={i} className="font-semibold text-white">
@@ -609,7 +737,6 @@ function MarkdownRenderer({ content }: { content: string }) {
           );
         }
 
-        // List items
         if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
           return (
             <div
@@ -622,7 +749,6 @@ function MarkdownRenderer({ content }: { content: string }) {
           );
         }
 
-        // Numbered lists
         if (/^\d+\.\s/.test(trimmed)) {
           const num = trimmed.match(/^(\d+)\./)?.[1];
           return (
@@ -638,19 +764,17 @@ function MarkdownRenderer({ content }: { content: string }) {
           );
         }
 
-        // Horizontal rule
         if (trimmed === "---" || trimmed === "***") {
           return <hr key={i} className="border-[#2a2a2a] my-4" />;
         }
 
-        // Tables (basic support)
         if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
           const cells = trimmed
             .split("|")
             .filter(Boolean)
             .map((c) => c.trim());
           if (cells.every((c) => /^[-:]+$/.test(c))) {
-            return null; // Skip separator row
+            return null;
           }
           return (
             <div
@@ -666,7 +790,6 @@ function MarkdownRenderer({ content }: { content: string }) {
           );
         }
 
-        // Regular paragraph
         return (
           <p key={i} className="text-gray-300 text-sm leading-relaxed">
             {trimmed}
