@@ -41,7 +41,45 @@ export default function Home() {
     try {
       const parsed = JSON.parse(raw);
       if (parsed.raw) return null;
-      return parsed as PostsData;
+
+      // Structure: { platforms: [{ name: "X", posts: [...] }, { name: "LinkedIn", posts: [...] }] }
+      if (parsed.platforms && Array.isArray(parsed.platforms)) {
+        const result: PostsData = {};
+        parsed.platforms.forEach(
+          (platform: { name: string; posts: Post[] }) => {
+            const key = platform.name.toLowerCase();
+            result[key] = platform.posts || [];
+          }
+        );
+        return result;
+      }
+
+      // Structure: { x: [...], linkedin: [...] }
+      if (parsed.x || parsed.linkedin || parsed.twitter) {
+        return parsed as PostsData;
+      }
+
+      // Structure: { posts: { x: [...], linkedin: [...] } }
+      if (
+        parsed.posts &&
+        typeof parsed.posts === "object" &&
+        !Array.isArray(parsed.posts)
+      ) {
+        return parsed.posts as PostsData;
+      }
+
+      // Structure: Array of posts with platform field
+      if (Array.isArray(parsed)) {
+        const grouped: PostsData = {};
+        parsed.forEach((post: Post & { platform?: string }) => {
+          const platform = (post.platform || "general").toLowerCase();
+          if (!grouped[platform]) grouped[platform] = [];
+          grouped[platform]!.push(post);
+        });
+        return grouped;
+      }
+
+      return null;
     } catch {
       return null;
     }
@@ -176,8 +214,15 @@ export default function Home() {
   const socialAnalystMsg = messages.find((m) => m.agent === "Social Analyst");
   const posts = contentCreatorMsg?.parsedPosts;
   const platforms = posts
-    ? Object.keys(posts).filter((k) => posts[k]?.length)
+    ? Object.keys(posts).filter(
+        (k) => Array.isArray(posts[k]) && posts[k]!.length > 0
+      )
     : [];
+
+  // Set active platform to first available if current is not valid
+  const effectivePlatform = platforms.includes(activePlatform)
+    ? activePlatform
+    : platforms[0] || "x";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0f0f0f] via-[#1a1a1a] to-[#0f0f0f] text-[#E5E7EB] flex flex-col">
@@ -185,7 +230,7 @@ export default function Home() {
       <header className="border-b border-[#2a2a2a]/50 bg-[#0f0f0f]/80 backdrop-blur-xl sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-400 flex items-center justify-center">
               <svg
                 className="w-5 h-5 text-white"
                 fill="none"
@@ -226,13 +271,13 @@ export default function Home() {
                   onChange={(e) => setTopic(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !running && runFlow()}
                   placeholder="e.g., AI productivity tools, sustainable fashion, crypto trends..."
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-gray-500 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white placeholder-gray-500 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
                 />
               </div>
               <button
                 onClick={runFlow}
                 disabled={running}
-                className="px-8 py-4 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-medium hover:from-violet-500 hover:to-fuchsia-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40"
+                className="px-8 py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 text-white font-medium hover:from-cyan-500 hover:to-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40"
               >
                 {running ? (
                   <span className="flex items-center gap-2">
@@ -286,7 +331,7 @@ export default function Home() {
             {/* Content Creator Panel */}
             <div className="bg-[#1a1a1a]/50 border border-[#2a2a2a] rounded-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-[#2a2a2a] flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-semibold text-sm">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-400 flex items-center justify-center text-white font-semibold text-sm">
                   CC
                 </div>
                 <div>
@@ -310,12 +355,13 @@ export default function Home() {
                           key={platform}
                           onClick={() => setActivePlatform(platform)}
                           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                            activePlatform === platform
-                              ? "bg-violet-500/20 text-violet-400 border border-violet-500/30"
+                            effectivePlatform === platform
+                              ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
                               : "bg-[#2a2a2a]/50 text-gray-400 border border-transparent hover:bg-[#2a2a2a]"
                           }`}
                         >
-                          {platform === "x"
+                          {platform.toLowerCase() === "x" ||
+                          platform.toLowerCase() === "twitter"
                             ? "𝕏 Twitter"
                             : platform.charAt(0).toUpperCase() +
                               platform.slice(1)}
@@ -325,7 +371,7 @@ export default function Home() {
 
                     {/* Posts */}
                     <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                      {(posts[activePlatform] || []).map((post, i) => (
+                      {(posts[effectivePlatform] || []).map((post, i) => (
                         <PostCard key={i} post={post} index={i} />
                       ))}
                     </div>
@@ -343,7 +389,7 @@ export default function Home() {
             {/* Social Analyst Panel */}
             <div className="bg-[#1a1a1a]/50 border border-[#2a2a2a] rounded-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-[#2a2a2a] flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white font-semibold text-sm">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-600 to-cyan-500 flex items-center justify-center text-white font-semibold text-sm">
                   SA
                 </div>
                 <div>
@@ -483,7 +529,7 @@ function PostCard({ post, index }: { post: Post; index: number }) {
           {post.body}
         </p>
       )}
-      {post.cta && <p className="text-violet-400 text-sm mb-3">{post.cta}</p>}
+      {post.cta && <p className="text-cyan-400 text-sm mb-3">{post.cta}</p>}
       {post.hashtags && post.hashtags.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {post.hashtags.map((tag, i) => (
@@ -556,7 +602,7 @@ function MarkdownRenderer({ content }: { content: string }) {
               key={i}
               className="flex items-start gap-2 text-gray-300 text-sm"
             >
-              <span className="text-violet-400 mt-1">•</span>
+              <span className="text-cyan-400 mt-1">•</span>
               <span>{trimmed.slice(2)}</span>
             </div>
           );
@@ -570,7 +616,7 @@ function MarkdownRenderer({ content }: { content: string }) {
               key={i}
               className="flex items-start gap-2 text-gray-300 text-sm"
             >
-              <span className="text-violet-400 font-medium min-w-[1.5rem]">
+              <span className="text-cyan-400 font-medium min-w-[1.5rem]">
                 {num}.
               </span>
               <span>{trimmed.replace(/^\d+\.\s*/, "")}</span>
