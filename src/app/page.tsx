@@ -16,6 +16,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [topic, setTopic] = useState<string>("");
   const esRef = useRef<EventSource | null>(null);
+  const completedRef = useRef(false);
 
   function appendLog(line: string) {
     setLogs((prev) => (prev ? prev + "\n" + line : line));
@@ -27,57 +28,93 @@ export default function Home() {
       setError(null);
       setLogs("");
       setMessages([]);
+      completedRef.current = false;
 
       if (esRef.current) {
         esRef.current.close();
         esRef.current = null;
       }
+
       const qp = topic ? `?topic=${encodeURIComponent(topic)}` : "";
       const es = new EventSource(`/api/run-backend/stream${qp}`);
       esRef.current = es;
+
       es.onmessage = async (evt) => {
         appendLog(evt.data);
-        // Try to parse backend JSON response and update UI on success
+
         try {
           const data = JSON.parse(evt.data);
+
           if (data.status === "completed") {
-            // Fetch outputs and update UI
-            const [contentJsonResp, analyticsMdResp] = await Promise.all([
-              fetch("/api/file/social_posts.json"),
-              fetch("/api/file/analytics_summary.md"),
-            ]);
-            if (contentJsonResp.ok) {
-              const raw = await contentJsonResp.text();
-              let pretty = raw;
-              try {
-                const parsed = JSON.parse(raw);
-                pretty = JSON.stringify(parsed, null, 2);
-              } catch {}
-              setMessages((prev) => [
-                ...prev,
-                { role: "agent", agent: "Content Creator", content: pretty },
-              ]);
-            }
-            if (analyticsMdResp.ok) {
-              const md = await analyticsMdResp.text();
-              setMessages((prev) => [
-                ...prev,
-                { role: "agent", agent: "Social Analyst", content: md },
-              ]);
-            }
-            setRunning(false);
+            // Mark completed FIRST to prevent onerror from showing error
+            completedRef.current = true;
             es.close();
             esRef.current = null;
+
+            // Now fetch outputs
+            try {
+              const [contentJsonResp, analyticsMdResp] = await Promise.all([
+                fetch("/api/file/social_posts.json"),
+                fetch("/api/file/analytics_summary.md"),
+              ]);
+
+              const newMessages: ChatMessage[] = [];
+
+              if (contentJsonResp.ok) {
+                const raw = await contentJsonResp.text();
+                let pretty = raw;
+                try {
+                  const parsed = JSON.parse(raw);
+                  pretty = JSON.stringify(parsed, null, 2);
+                } catch {}
+                newMessages.push({
+                  role: "agent",
+                  agent: "Content Creator",
+                  content: pretty,
+                });
+              } else {
+                appendLog(
+                  `Failed to fetch social_posts.json: ${contentJsonResp.status}`
+                );
+              }
+
+              if (analyticsMdResp.ok) {
+                const md = await analyticsMdResp.text();
+                newMessages.push({
+                  role: "agent",
+                  agent: "Social Analyst",
+                  content: md,
+                });
+              } else {
+                appendLog(
+                  `Failed to fetch analytics_summary.md: ${analyticsMdResp.status}`
+                );
+              }
+
+              setMessages(newMessages);
+            } catch (fetchErr) {
+              appendLog(`Fetch error: ${fetchErr}`);
+              setError("Failed to fetch output files");
+            }
+
+            setRunning(false);
           } else if (data.status === "failed") {
+            completedRef.current = true;
             setError(data.message || "Backend error");
             setRunning(false);
             es.close();
             esRef.current = null;
           }
-        } catch {}
+        } catch {
+          // Not JSON, just a log message - ignore
+        }
       };
+
       es.onerror = () => {
-        setError("Stream error. Check backend and .env.");
+        // Only show error if we haven't completed successfully
+        if (!completedRef.current) {
+          setError("Stream error. Check backend and .env.");
+        }
         es.close();
         esRef.current = null;
         setRunning(false);
@@ -99,7 +136,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#121212] text-[#E5E7EB] flex flex-col">
-      {/* Header */}
       <header className="border-b border-[#2a2a2a] bg-[#1a1a1a] sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <h1 className="text-center text-2xl font-semibold text-[#D1D5DB]">
@@ -108,10 +144,8 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main */}
       <main className="flex-1">
         <div className="max-w-5xl mx-auto px-4 py-6">
-          {/* Search bar + Run button */}
           <div className="flex items-center gap-3 mb-5">
             <input
               value={topic}
@@ -123,41 +157,37 @@ export default function Home() {
               onClick={runFlow}
               disabled={running}
               className="px-5 py-3 rounded-md bg-[#3F3F46] text-[#E5E7EB] hover:bg-[#52525B] disabled:opacity-50 border border-[#4B5563]"
-              aria-label="Run"
             >
               {running ? "Running…" : "Run"}
             </button>
           </div>
 
-          {/* Side-by-side outputs */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Content Creator */}
             <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4">
               <div className="flex items-center gap-2 mb-2">
-                <div className="h-8 w-8 rounded-md bg-[#3F3F46] text-white flex items-center justify-center text-xs font-semibold select-none">
+                <div className="h-8 w-8 rounded-md bg-[#3F3F46] text-white flex items-center justify-center text-xs font-semibold">
                   CC
                 </div>
                 <div className="text-sm font-medium text-[#D1D5DB]">
                   Content Creator
                 </div>
               </div>
-              <pre className="whitespace-pre-wrap text-sm leading-relaxed text-[#D1D5DB] opacity-90">
+              <pre className="whitespace-pre-wrap text-sm leading-relaxed text-[#D1D5DB] opacity-90 max-h-96 overflow-auto">
                 {messages.find((m) => m.agent === "Content Creator")?.content ||
                   "—"}
               </pre>
             </div>
 
-            {/* Social Analyst */}
             <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4">
               <div className="flex items-center gap-2 mb-2">
-                <div className="h-8 w-8 rounded-md bg-[#3F3F46] text-white flex items-center justify-center text-xs font-semibold select-none">
+                <div className="h-8 w-8 rounded-md bg-[#3F3F46] text-white flex items-center justify-center text-xs font-semibold">
                   SA
                 </div>
                 <div className="text-sm font-medium text-[#D1D5DB]">
                   Social Analyst
                 </div>
               </div>
-              <pre className="whitespace-pre-wrap text-sm leading-relaxed text-[#D1D5DB] opacity-90">
+              <pre className="whitespace-pre-wrap text-sm leading-relaxed text-[#D1D5DB] opacity-90 max-h-96 overflow-auto">
                 {messages.find((m) => m.agent === "Social Analyst")?.content ||
                   "—"}
               </pre>
@@ -168,7 +198,6 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Logs toggle bottom-left */}
       <div className="fixed bottom-4 left-4">
         <button
           onClick={() => setShowLogs((s) => !s)}
