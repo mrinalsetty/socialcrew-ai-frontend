@@ -65,7 +65,12 @@ export default function Home() {
                 let pretty = raw;
                 try {
                   const parsed = JSON.parse(raw);
-                  pretty = JSON.stringify(parsed, null, 2);
+                  // Handle case where backend returns {raw, error}
+                  if (parsed.raw && parsed.error) {
+                    pretty = parsed.raw;
+                  } else {
+                    pretty = JSON.stringify(parsed, null, 2);
+                  }
                 } catch {}
                 newMessages.push({
                   role: "agent",
@@ -73,8 +78,12 @@ export default function Home() {
                   content: pretty,
                 });
               } else {
+                // Try to get error details
+                const errText = await contentJsonResp
+                  .text()
+                  .catch(() => "Unknown error");
                 appendLog(
-                  `Failed to fetch social_posts.json: ${contentJsonResp.status}`
+                  `Failed to fetch social_posts.json: ${contentJsonResp.status} - ${errText}`
                 );
               }
 
