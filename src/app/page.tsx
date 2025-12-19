@@ -51,21 +51,19 @@ export default function Home() {
             es.close();
             esRef.current = null;
 
-            // Now fetch outputs
+            // Fetch outputs separately to handle individual failures
+            const newMessages: ChatMessage[] = [];
+
+            // Fetch social_posts.json
             try {
-              const [contentJsonResp, analyticsMdResp] = await Promise.all([
-                fetch("/api/file/social_posts.json"),
-                fetch("/api/file/analytics_summary.md"),
-              ]);
-
-              const newMessages: ChatMessage[] = [];
-
+              const contentJsonResp = await fetch(
+                "/api/file/social_posts.json"
+              );
               if (contentJsonResp.ok) {
                 const raw = await contentJsonResp.text();
                 let pretty = raw;
                 try {
                   const parsed = JSON.parse(raw);
-                  // Handle case where backend returns {raw, error}
                   if (parsed.raw && parsed.error) {
                     pretty = parsed.raw;
                   } else {
@@ -78,15 +76,32 @@ export default function Home() {
                   content: pretty,
                 });
               } else {
-                // Try to get error details
                 const errText = await contentJsonResp
                   .text()
                   .catch(() => "Unknown error");
                 appendLog(
-                  `Failed to fetch social_posts.json: ${contentJsonResp.status} - ${errText}`
+                  `social_posts.json: ${contentJsonResp.status} - ${errText}`
                 );
+                newMessages.push({
+                  role: "agent",
+                  agent: "Content Creator",
+                  content: `Error: ${contentJsonResp.status}`,
+                });
               }
+            } catch (err) {
+              appendLog(`social_posts.json fetch failed: ${err}`);
+              newMessages.push({
+                role: "agent",
+                agent: "Content Creator",
+                content: "Failed to load",
+              });
+            }
 
+            // Fetch analytics_summary.md
+            try {
+              const analyticsMdResp = await fetch(
+                "/api/file/analytics_summary.md"
+              );
               if (analyticsMdResp.ok) {
                 const md = await analyticsMdResp.text();
                 newMessages.push({
@@ -95,16 +110,23 @@ export default function Home() {
                   content: md,
                 });
               } else {
-                appendLog(
-                  `Failed to fetch analytics_summary.md: ${analyticsMdResp.status}`
-                );
+                appendLog(`analytics_summary.md: ${analyticsMdResp.status}`);
+                newMessages.push({
+                  role: "agent",
+                  agent: "Social Analyst",
+                  content: `Error: ${analyticsMdResp.status}`,
+                });
               }
-
-              setMessages(newMessages);
-            } catch (fetchErr) {
-              appendLog(`Fetch error: ${fetchErr}`);
-              setError("Failed to fetch output files");
+            } catch (err) {
+              appendLog(`analytics_summary.md fetch failed: ${err}`);
+              newMessages.push({
+                role: "agent",
+                agent: "Social Analyst",
+                content: "Failed to load",
+              });
             }
+
+            setMessages(newMessages);
 
             setRunning(false);
           } else if (data.status === "failed") {
