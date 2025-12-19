@@ -40,9 +40,9 @@ export default function Home() {
   function parsePostsJson(raw: string): PostsData | null {
     try {
       const parsed = JSON.parse(raw);
-      if (parsed.raw) return null;
+      if (parsed.raw && parsed.error) return null;
 
-      // Structure: { platforms: [{ name: "X", posts: [...] }, { name: "LinkedIn", posts: [...] }] }
+      // Structure 1: { platforms: [{ name: "X", posts: [...] }, ...] }
       if (parsed.platforms && Array.isArray(parsed.platforms)) {
         const result: PostsData = {};
         parsed.platforms.forEach(
@@ -54,21 +54,33 @@ export default function Home() {
         return result;
       }
 
-      // Structure: { x: [...], linkedin: [...] }
-      if (parsed.x || parsed.linkedin || parsed.twitter) {
-        return parsed as PostsData;
+      // Structure 2: { "X": [...], "LinkedIn": [...] } - direct platform keys
+      const keys = Object.keys(parsed);
+      const hasPlatformArrays = keys.some((k) => Array.isArray(parsed[k]));
+      if (hasPlatformArrays) {
+        const result: PostsData = {};
+        keys.forEach((k) => {
+          if (Array.isArray(parsed[k])) {
+            result[k.toLowerCase()] = parsed[k];
+          }
+        });
+        return result;
       }
 
-      // Structure: { posts: { x: [...], linkedin: [...] } }
+      // Structure 3: { posts: { x: [...], linkedin: [...] } }
       if (
         parsed.posts &&
         typeof parsed.posts === "object" &&
         !Array.isArray(parsed.posts)
       ) {
-        return parsed.posts as PostsData;
+        const result: PostsData = {};
+        Object.keys(parsed.posts).forEach((k) => {
+          result[k.toLowerCase()] = parsed.posts[k];
+        });
+        return result;
       }
 
-      // Structure: Array of posts with platform field
+      // Structure 4: Array of posts with platform field
       if (Array.isArray(parsed)) {
         const grouped: PostsData = {};
         parsed.forEach((post: Post & { platform?: string }) => {
@@ -363,6 +375,8 @@ export default function Home() {
                           {platform.toLowerCase() === "x" ||
                           platform.toLowerCase() === "twitter"
                             ? "𝕏 Twitter"
+                            : platform.toLowerCase() === "linkedin"
+                            ? "LinkedIn"
                             : platform.charAt(0).toUpperCase() +
                               platform.slice(1)}
                         </button>
