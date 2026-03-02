@@ -68,8 +68,8 @@ export default function HomePage() {
   }, []);
 
   const statusLabel = useMemo(() => {
-    if (backendOnline) return "V2.1 • Backend online";
-    return "V2.1 • Backend sleeping";
+    if (backendOnline) return "Backend online";
+    return "Backend sleeping";
   }, [backendOnline]);
 
   const saveHistory = (item: HistoryItem) => {
