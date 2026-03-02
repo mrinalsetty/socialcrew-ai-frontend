@@ -1,3 +1,20 @@
+export type SocialPlatform =
+  | "LINKEDIN"
+  | "YOUTUBE"
+  | "FACEBOOK"
+  | "X"
+  | "INSTAGRAM"
+  | "THREADS";
+
+export type GenerateRequest = {
+  topic: string;
+  platform: SocialPlatform;
+  brandName?: string;
+  audience?: string;
+  tone?: string;
+  ctaStyle?: string;
+};
+
 export type GeneratedPost = {
   id: number;
   title: string;
@@ -41,4 +58,12 @@ export type BackendMeta = {
   };
   endpoints: { method: string; path: string }[];
   notes: string[];
+};
+
+export type HistoryItem = {
+  id: string;
+  topic: string;
+  platform: SocialPlatform;
+  brandName: string;
+  createdAt: string;
 };

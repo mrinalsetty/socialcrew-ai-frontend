@@ -1,3 +1,5 @@
+import type { GenerateRequest } from "@/types";
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 async function fetchWithTimeout(
@@ -35,13 +37,13 @@ export async function getBackendMeta() {
   return response.json();
 }
 
-export async function generateContent(topic: string) {
+export async function generateContent(input: GenerateRequest) {
   const response = await fetchWithTimeout(
     `${API_URL}/generate`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic }),
+      body: JSON.stringify(input),
     },
     20000,
   );

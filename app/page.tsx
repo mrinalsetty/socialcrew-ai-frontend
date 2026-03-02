@@ -3,15 +3,50 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { generateContent, getBackendHealth } from "@/lib/api";
-import type { BackendHealth, GenerateResponse } from "@/types";
+import type {
+  BackendHealth,
+  GenerateRequest,
+  GenerateResponse,
+  HistoryItem,
+  SocialPlatform,
+} from "@/types";
+
+const platforms: { label: string; value: SocialPlatform }[] = [
+  { label: "LinkedIn", value: "LINKEDIN" },
+  { label: "YouTube", value: "YOUTUBE" },
+  { label: "Facebook Pages", value: "FACEBOOK" },
+  { label: "X", value: "X" },
+  { label: "Instagram", value: "INSTAGRAM" },
+  { label: "Threads", value: "THREADS" },
+];
 
 export default function HomePage() {
-  const [topic, setTopic] = useState("");
+  const [form, setForm] = useState<GenerateRequest>({
+    topic: "",
+    platform: "LINKEDIN",
+    brandName: "",
+    audience: "",
+    tone: "",
+    ctaStyle: "",
+  });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<GenerateResponse | null>(null);
   const [health, setHealth] = useState<BackendHealth | null>(null);
   const [backendOnline, setBackendOnline] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem("socialcrew-history");
+    if (stored) {
+      try {
+        setHistory(JSON.parse(stored) as HistoryItem[]);
+      } catch {
+        setHistory([]);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -38,12 +73,25 @@ export default function HomePage() {
   }, []);
 
   const statusLabel = useMemo(() => {
-    if (backendOnline) return "V1.1 • Backend online";
-    return "V1.1 • Backend sleeping";
+    if (backendOnline) return "V2.0 • Backend online";
+    return "V2.0 • Backend sleeping";
   }, [backendOnline]);
 
+  const updateField = (field: keyof GenerateRequest, value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const saveHistory = (item: HistoryItem) => {
+    const updated = [item, ...history].slice(0, 6);
+    setHistory(updated);
+    window.localStorage.setItem("socialcrew-history", JSON.stringify(updated));
+  };
+
   const handleGenerate = async () => {
-    if (!topic.trim()) {
+    if (!form.topic.trim()) {
       setError("Please enter a topic.");
       return;
     }
@@ -52,9 +100,22 @@ export default function HomePage() {
     setError("");
 
     try {
-      const result = await generateContent(topic.trim());
+      const payload: GenerateRequest = {
+        ...form,
+        topic: form.topic.trim(),
+      };
+
+      const result = await generateContent(payload);
       setData(result);
       setBackendOnline(true);
+
+      saveHistory({
+        id: crypto.randomUUID(),
+        topic: payload.topic,
+        platform: payload.platform,
+        brandName: payload.brandName || "No brand",
+        createdAt: new Date().toISOString(),
+      });
     } catch (err) {
       console.error(err);
       setBackendOnline(false);
@@ -64,16 +125,25 @@ export default function HomePage() {
     }
   };
 
+  const loadFromHistory = (item: HistoryItem) => {
+    setForm((prev) => ({
+      ...prev,
+      topic: item.topic,
+      platform: item.platform,
+      brandName: item.brandName === "No brand" ? "" : item.brandName,
+    }));
+  };
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.10),transparent_28%),#020617] px-6 py-10 text-white">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-7xl">
         <div className="mb-10 flex items-center justify-between border-b border-white/10 pb-4">
           <div>
             <h1 className="text-4xl font-bold tracking-tight text-cyan-400">
               SocialCrew AI
             </h1>
             <p className="mt-2 text-sm text-white/50">
-              Two-agent social content system powered by LangGraph + Groq
+              Platform-aware multi-agent social content generation
             </p>
           </div>
 
@@ -96,58 +166,180 @@ export default function HomePage() {
           </Link>
         </div>
 
-        <section className="mb-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_rgba(34,211,238,0.05)]">
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-cyan-300">
-              Creator agent
-            </span>
-            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-cyan-300">
-              Analyst agent
-            </span>
-            {health && (
-              <span className="text-xs text-white/45">
-                {health.creatorModel} + {health.analystModel}
+        <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+          <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_rgba(34,211,238,0.05)]">
+            <div className="mb-6 flex flex-wrap items-center gap-3">
+              <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-cyan-300">
+                Creator agent
               </span>
-            )}
-          </div>
+              <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-cyan-300">
+                Analyst agent
+              </span>
+              {health && (
+                <span className="text-xs text-white/45">
+                  {health.creatorModel} + {health.analystModel}
+                </span>
+              )}
+            </div>
 
-          <label className="mb-3 block text-sm text-white/70">
-            What topic should we create content for?
-          </label>
+            <div className="grid gap-4">
+              <div>
+                <label className="mb-2 block text-sm text-white/70">
+                  Topic
+                </label>
+                <input
+                  type="text"
+                  value={form.topic}
+                  onChange={(e) => updateField("topic", e.target.value)}
+                  placeholder="e.g. AI productivity for founders"
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none placeholder:text-white/25 focus:border-cyan-400"
+                />
+              </div>
 
-          <div className="flex flex-col gap-3 md:flex-row">
-            <input
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g. AI productivity for founders, sustainable fashion, crypto trends..."
-              className="flex-1 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none placeholder:text-white/25 focus:border-cyan-400"
-            />
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="rounded-2xl bg-cyan-400 px-6 py-3 font-semibold text-black shadow-[0_0_24px_rgba(34,211,238,0.22)] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? "Generating…" : "Generate"}
-            </button>
-          </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm text-white/70">
+                    Platform
+                  </label>
+                  <select
+                    value={form.platform}
+                    onChange={(e) =>
+                      updateField("platform", e.target.value as SocialPlatform)
+                    }
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none focus:border-cyan-400"
+                  >
+                    {platforms.map((platform) => (
+                      <option
+                        key={platform.value}
+                        value={platform.value}
+                        className="bg-slate-950"
+                      >
+                        {platform.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-          {error && <p className="mt-3 text-sm text-orange-300">{error}</p>}
-        </section>
+                <div>
+                  <label className="mb-2 block text-sm text-white/70">
+                    Brand Name
+                  </label>
+                  <input
+                    type="text"
+                    value={form.brandName}
+                    onChange={(e) => updateField("brandName", e.target.value)}
+                    placeholder="e.g. SocialCrew AI"
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none placeholder:text-white/25 focus:border-cyan-400"
+                  />
+                </div>
+              </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_30px_rgba(34,211,238,0.04)]">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <label className="mb-2 block text-sm text-white/70">
+                    Audience
+                  </label>
+                  <input
+                    type="text"
+                    value={form.audience}
+                    onChange={(e) => updateField("audience", e.target.value)}
+                    placeholder="founders, creators..."
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none placeholder:text-white/25 focus:border-cyan-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-white/70">
+                    Tone
+                  </label>
+                  <input
+                    type="text"
+                    value={form.tone}
+                    onChange={(e) => updateField("tone", e.target.value)}
+                    placeholder="smart, bold, warm..."
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none placeholder:text-white/25 focus:border-cyan-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-white/70">
+                    CTA Style
+                  </label>
+                  <input
+                    type="text"
+                    value={form.ctaStyle}
+                    onChange={(e) => updateField("ctaStyle", e.target.value)}
+                    placeholder="soft, direct, community..."
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none placeholder:text-white/25 focus:border-cyan-400"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleGenerate}
+                disabled={loading}
+                className="mt-2 rounded-2xl bg-cyan-400 px-6 py-3 font-semibold text-black shadow-[0_0_24px_rgba(34,211,238,0.22)] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? "Generating…" : "Generate Platform-Aware Content"}
+              </button>
+
+              {error && <p className="text-sm text-orange-300">{error}</p>}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold text-cyan-300">
+                  Generation History
+                </h2>
+                <p className="text-sm text-white/50">
+                  Last 6 local runs on this device
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {history.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-white/10 p-6 text-white/30">
+                  No history yet.
+                </div>
+              ) : (
+                history.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => loadFromHistory(item)}
+                    className="w-full rounded-2xl border border-white/10 bg-black/35 p-4 text-left transition hover:border-cyan-400/30"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-xs text-cyan-300">
+                        {item.platform}
+                      </span>
+                      <span className="text-xs text-white/40">
+                        {new Date(item.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="font-medium text-white">{item.topic}</p>
+                    <p className="mt-1 text-sm text-white/50">
+                      {item.brandName}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-semibold text-cyan-300">
                   Content Creator
                 </h2>
                 <p className="text-sm text-white/50">
-                  Multi-angle generated post options
+                  Platform-aware generated variants
                 </p>
-              </div>
-              <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/40">
-                Agent 01
               </div>
             </div>
 
@@ -204,30 +396,27 @@ export default function HomePage() {
             )}
           </section>
 
-          <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_30px_rgba(34,211,238,0.04)]">
+          <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-semibold text-cyan-300">
                   Social Analyst
                 </h2>
                 <p className="text-sm text-white/50">
-                  Best-post selection and messaging advice
+                  Platform and audience-aware evaluation
                 </p>
-              </div>
-              <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/40">
-                Agent 02
               </div>
             </div>
 
             {!data && !loading && (
               <div className="flex min-h-[380px] items-center justify-center rounded-2xl border border-dashed border-white/10 text-white/25">
-                Analytics and recommendations will appear here
+                Analysis will appear here
               </div>
             )}
 
             {loading && (
               <div className="flex min-h-[380px] items-center justify-center rounded-2xl border border-dashed border-white/10 text-white/40">
-                Analyst agent is reviewing the drafts…
+                Analyst agent is reviewing drafts…
               </div>
             )}
 
