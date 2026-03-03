@@ -1,10 +1,18 @@
 export type SocialPlatform =
-  | "LINKEDIN"
-  | "YOUTUBE"
-  | "FACEBOOK"
-  | "X"
-  | "INSTAGRAM"
-  | "THREADS";
+  | 'LINKEDIN'
+  | 'YOUTUBE'
+  | 'FACEBOOK'
+  | 'X'
+  | 'INSTAGRAM'
+  | 'THREADS';
+
+export type TeamAgentId = 'strategy' | 'creator' | 'analyst';
+
+export type TeamInfo = {
+  strategyName: string;
+  creatorName: string;
+  analystName: string;
+};
 
 export type GenerateRequest = {
   topic: string;
@@ -15,33 +23,63 @@ export type GenerateRequest = {
   ctaStyle?: string;
 };
 
+export type ConversationMessage = {
+  id: string;
+  agentId: TeamAgentId | 'user';
+  agentName: string;
+  text: string;
+  timestamp: string;
+};
+
 export type GeneratedPost = {
   id: number;
   title: string;
-  content: string;
-  hashtags: string[];
+  description: string;
 };
 
 export type GenerateResponse = {
+  platform: SocialPlatform;
+  team: TeamInfo;
+  conversation: ConversationMessage[];
   strategy: {
-    angle: string;
-    audienceFit: string;
-    hookStyle: string;
-    ctaApproach: string;
-    brief: string;
+    agentName: string;
+    intro: string;
+    fullResponse: string;
+    recommendedAngles: string[];
+    audienceSegments: string[];
   };
-  contentCreator: GeneratedPost[];
-  contentSummary: string;
-  socialAnalyst: {
+  creator: {
+    agentName: string;
+    intro: string;
+    overview: string;
+    posts: GeneratedPost[];
+    commonHashtags: string[];
+  };
+  analyst: {
+    agentName: string;
+    intro: string;
+    fullResponse: string;
     bestPost: number;
-    reason: string;
-    suggestions: string[];
-    positioning: string;
+    comparison: string[];
+    audienceFitNotes: string[];
   };
-  agentFlow: {
-    name: string;
-    summary: string;
-  }[];
+};
+
+export type FollowUpRequest = {
+  topic: string;
+  platform: SocialPlatform;
+  team: TeamInfo;
+  userMessage: string;
+  targetAgents: TeamAgentId[];
+  strategySummary: string;
+  creatorSummary: string;
+  analystSummary: string;
+  postTitles: string[];
+  bestPost: number;
+};
+
+export type FollowUpResponse = {
+  messages: ConversationMessage[];
 };
 
 export type BackendHealth = {

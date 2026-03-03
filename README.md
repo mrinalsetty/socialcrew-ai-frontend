@@ -1,69 +1,76 @@
 # SocialCrew AI Frontend
 
-Next.js frontend for **SocialCrew AI**, a multi-agent social content workspace.
+Next.js frontend for **SocialCrew AI**, a human-first AI content studio where a small AI team collaborates with the user in a group-chat style interface.
 
-This frontend is designed to feel more like an **agentic product workspace** than a chatbot.
+This frontend is designed to feel like a real conversation with:
 
-It currently includes:
+- a strategist,
+- a creator,
+- an analyst,
+- and the user.
 
-- one main content input
-- platform switching
-- left sidebar history
-- Enter-to-submit
-- visible multi-agent workflow
-- backend live status
-- backend dashboard access
+Instead of a plain chatbot or static dashboard, the app presents the experience as a polished team discussion with live suggestions, follow-up chat, post previews, and optional voice playback.
 
 ---
 
-## Features
+## What the frontend does
+
+The frontend allows the user to:
+
+- choose a platform
+- enter one content idea
+- start a human-style team conversation
+- watch multiple AI teammates discuss strategy, creation, and analysis
+- review 5 post suggestions
+- see shared hashtags
+- ask follow-up questions to one, multiple, or all agents
+- replay the conversation with voice
+- browse campaign history
+
+---
+
+## Core UX
+
+The application is designed as a **group conversation** rather than a standard prompt-response interface.
+
+### Team members in the UI
+
+- **You**
+- **Strategy agent**
+- **Creator agent**
+- **Analyst agent**
+
+### Experience highlights
+
+- user messages appear on the **left**
+- agent messages appear on the **right**
+- voice is **enabled by default**
+- the conversation feels more like a WhatsApp / group-chat thread
+- suggestions are shown as platform-themed preview cards
+- the layout is responsive and mobile friendly
+
+---
+
+## Main Features
 
 - **Next.js App Router frontend**
-- **Dark neon UI**
-- **Sidebar history** similar to ChatGPT-style navigation
-- **Enter key submits generation**
-- **Clickable backend status badge**
-  - opens backend dashboard
-- **Backend dashboard page** at `/backend`
-- **Visible agent workflow**
-  - Strategy Agent
-  - Creator Agent
-  - Analyst Agent
-- **Platform-aware generation**
+- **Dark neon visual theme**
 - **Responsive layout**
-
----
-
-## Tech Stack
-
-- **Next.js**
-- **TypeScript**
-- **Tailwind CSS**
-
----
-
-## Main UX
-
-This version is optimized for:
-
-- founders
-- personal brands
-- small business operators
-
-The main app keeps the workflow light:
-
-- select a platform
-- type a topic
-- press Enter or click Generate
-- review strategy, content options, and analyst recommendation
-
-Instead of asking users to fill many fields every time, the frontend provides a more focused workflow and uses sensible defaults.
+- **Human-style group chat UI**
+- **Voice playback using browser speech synthesis**
+- **Backend live status badge**
+- **Clickable backend status badge**
+- **Follow-up messaging**
+- **Campaign history**
+- **Platform-specific suggestion previews**
+- **Replay / stop voice controls**
+- **Backend dashboard route**
 
 ---
 
 ## Supported Platforms
 
-The frontend supports generation for:
+The frontend currently supports:
 
 - LinkedIn
 - YouTube
@@ -72,38 +79,49 @@ The frontend supports generation for:
 - Instagram
 - Threads
 
+Each platform is displayed with its own visual preview style.
+
 ---
 
-## Routes
+## Application Routes
 
 ### `/`
 
-Main app
+Main SocialCrew AI experience
 
-Includes:
+This includes:
 
-- platform selector
+- platform picker
 - topic input
-- sidebar history
-- agent workflow panel
-- strategy section
-- creator section
-- analyst section
+- voice controls
+- live team chat
+- follow-up chat
+- suggestions panel
+- campaign history
+- analyst snapshot
 
 ### `/backend`
 
-Backend dashboard page
+Frontend backend dashboard page
 
-Includes:
+This includes:
 
-- backend online/offline status
-- service info
-- architecture
-- stack
-- model info
-- health JSON
-- **Wake Up Server** button
-- link back to the main app
+- backend status
+- architecture summary
+- stack details
+- health info
+- quick backend links
+- wake-server action
+- navigation back to the main app
+
+---
+
+## Tech Stack
+
+- **Next.js**
+- **React**
+- **TypeScript**
+- **Tailwind CSS**
 
 ---
 
